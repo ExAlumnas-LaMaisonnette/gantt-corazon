@@ -1817,7 +1817,7 @@ h1{font-weight:500;margin:8px auto 7px;font-size:clamp(30px,4.8vw,46px);line-hei
 
   if (SHEET_URL) {
     pull();
-    setInterval(function(){ if (!document.hidden) pull(); }, 20000);
+    setInterval(function(){ if (!document.hidden) pull(); }, 5000);
     document.addEventListener("visibilitychange", function(){ if (!document.hidden) pull(); });
   }
 })();

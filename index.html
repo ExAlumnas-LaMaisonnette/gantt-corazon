@@ -21,6 +21,8 @@ body{margin:0;background:#fff;color:var(--text);font-family:"Gotham Book","Gotha
 .kicker{margin-top:22px;color:var(--blue);font-size:12px;letter-spacing:.08em;text-transform:uppercase;font-weight:600}
 h1{font-weight:500;margin:8px auto 7px;font-size:clamp(30px,4.8vw,46px);line-height:1.05;letter-spacing:-.025em}
 .subtitle{font-size:16px;margin:0;color:#333}
+.sync{margin-top:10px;font-size:11px;color:var(--muted);min-height:14px}
+.sync.error{color:var(--red)}
 
 .tabs{position:sticky;top:0;z-index:30;background:rgba(255,255,255,.97);backdrop-filter:blur(8px);display:flex;border-bottom:2px solid var(--red);overflow-x:auto;white-space:nowrap;margin-bottom:28px}
 .tabs button{border:0;background:#fff;color:var(--text);padding:14px 17px 12px;font:inherit;font-size:11px;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;border-top:3px solid transparent}
@@ -111,6 +113,7 @@ h1{font-weight:500;margin:8px auto 7px;font-size:clamp(30px,4.8vw,46px);line-hei
 <div class="kicker">Coordinación final · Octubre 2026</div>
 <h1>PROYECTO CORAZÓN</h1>
 <p class="subtitle">Carta Gantt, responsables y seguimiento de tareas</p>
+<div class="sync" id="syncStatus" aria-live="polite"></div>
 </header>
 
 <nav class="tabs">
@@ -1619,6 +1622,52 @@ h1{font-weight:500;margin:8px auto 7px;font-size:clamp(30px,4.8vw,46px);line-hei
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch(e) {}
   }
 
+  // Progreso compartido: la planilla de Google guarda las tareas hechas para todas.
+  // Pegar aquí la URL de la aplicación web de Apps Script (termina en /exec).
+  var SHEET_URL = "";
+  var pending = 0;
+
+  function setSync(status) {
+    var el = document.getElementById("syncStatus");
+    if (!el) return;
+    var now = new Date();
+    var hhmm = ("0" + now.getHours()).slice(-2) + ":" + ("0" + now.getMinutes()).slice(-2);
+    el.className = "sync " + status;
+    el.textContent = status === "saving" ? "Guardando…"
+      : status === "ok" ? "Progreso compartido · actualizado " + hhmm
+      : "Sin conexión con la planilla: los cambios quedan solo en este navegador";
+  }
+
+  function applyRemote(data) {
+    if (!data || !data.ok) { setSync("error"); return; }
+    state = data.state || {};
+    save();
+    refresh();
+    setSync("ok");
+  }
+
+  function pull() {
+    if (!SHEET_URL || pending) return;
+    fetch(SHEET_URL)
+      .then(function(r){ return r.json(); })
+      .then(function(data){ if (!pending) applyRemote(data); })
+      .catch(function(){ setSync("error"); });
+  }
+
+  function push(id, done) {
+    if (!SHEET_URL) return;
+    pending++;
+    setSync("saving");
+    fetch(SHEET_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ id: id, done: done })
+    })
+      .then(function(r){ return r.json(); })
+      .then(function(data){ pending--; if (!pending) applyRemote(data); })
+      .catch(function(){ pending--; setSync("error"); });
+  }
+
   function syncChecks() {
     document.querySelectorAll("[data-check]").forEach(function(cb){
       cb.checked = isDone(cb.getAttribute("data-check"));
@@ -1732,6 +1781,7 @@ h1{font-weight:500;margin:8px auto 7px;font-size:clamp(30px,4.8vw,46px);line-hei
       state[cb.getAttribute("data-check")] = cb.checked;
       save();
       refresh();
+      push(cb.getAttribute("data-check"), cb.checked);
     }
   });
 
@@ -1764,6 +1814,12 @@ h1{font-weight:500;margin:8px auto 7px;font-size:clamp(30px,4.8vw,46px);line-hei
   });
 
   refresh();
+
+  if (SHEET_URL) {
+    pull();
+    setInterval(function(){ if (!document.hidden) pull(); }, 20000);
+    document.addEventListener("visibilitychange", function(){ if (!document.hidden) pull(); });
+  }
 })();
 </script>
 </body>
